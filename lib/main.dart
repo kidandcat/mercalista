@@ -3,8 +3,10 @@ import 'package:get/get.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_barcode_scanner/flutter_barcode_scanner.dart';
 import 'package:http/http.dart' as http;
+import 'package:get_storage/get_storage.dart';
 
-void main() {
+void main() async {
+  await GetStorage.init('test');
   runApp(GetMaterialApp(home: MyApp()));
 }
 
@@ -16,18 +18,22 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: Home(),
+      home: MarketlistScreen(),
     );
   }
 }
 
-class Home extends StatefulWidget {
+class MarketlistScreen extends StatefulWidget {
+  MarketlistScreen({this.listName});
+  final String listName;
+
   @override
-  _HomeState createState() => _HomeState();
+  _MarketlistScreenState createState() => _MarketlistScreenState();
 }
 
-class _HomeState extends State<Home> {
-  List<Product> products = [];
+class _MarketlistScreenState extends State<MarketlistScreen> {
+  final List<Product> products = [];
+  final marketlist = Marketlist('test');
 
   @override
   Widget build(BuildContext context) {
@@ -37,14 +43,14 @@ class _HomeState extends State<Home> {
       ),
       body: Center(
           child: ListView.builder(
-        itemCount: products.length,
+        itemCount: marketlist.size(),
         itemBuilder: (context, index) => Container(
           height: 60,
           child: Row(
             children: [
-              Image.network(products[index].image),
-              Flexible(child: Text(products[index].name)),
-              Text(products[index].price),
+              Image.network(marketlist.getProduct(index).image),
+              Flexible(child: Text(marketlist.getProduct(index).name)),
+              Text(marketlist.getProduct(index).price),
             ],
           ),
         ),
@@ -61,7 +67,7 @@ class _HomeState extends State<Home> {
             var j = jsonDecode(res.body);
             var p = Product.fromJson(j);
             setState(() {
-              products.add(p);
+              marketlist.addProduct(p);
             });
           } catch (e) {
             Get.defaultDialog(title: e.toString());
@@ -72,13 +78,56 @@ class _HomeState extends State<Home> {
   }
 }
 
+class Marketlist {
+  GetStorage box;
+  DateTime date;
+  List<Product> elements = [];
+
+  Marketlist(String name) {
+    box = GetStorage(name);
+    date = box.read('date');
+    var els = box.read<List<dynamic>>('elements');
+    if (els != null) elements = els.map((p) => Product.fromJson(p)).toList();
+  }
+
+  Marketlist.fromJson(Map<String, dynamic> json)
+      : date = json['date'],
+        elements = json['elements'].map((p) => Product.fromJson(p));
+
+  Map<String, dynamic> toJson() => {
+        'date': date,
+        'elements': elements,
+      };
+
+  void addProduct(Product p) {
+    elements.add(p);
+    box.write('elements', elements);
+  }
+
+  Product getProduct(int index) {
+    return elements[index];
+  }
+
+  int size() {
+    return elements.length;
+  }
+}
+
 class Product {
   String name;
   String image;
   String price;
+  int quantity = 1;
   Product({this.name, this.image, this.price});
   Product.fromJson(Map<String, dynamic> json)
       : name = json['display_name'],
         image = json['thumbnail'],
         price = json['price_instructions']['unit_price'];
+  Map<String, dynamic> toJson() => {
+        'display_name': name,
+        'thumbnail': image,
+        'price_instructions': {
+          'unit_price': price,
+        }
+      };
 }

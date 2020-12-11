@@ -23,6 +23,7 @@ environment:
 dependencies:
   http:
   get:
+  get_storage:
   flutter_barcode_scanner:
   flutter:
     sdk: flutter
