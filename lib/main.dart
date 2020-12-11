@@ -73,6 +73,15 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
                       Image.network(marketlist.getProduct(index).image),
                       Flexible(child: Text(marketlist.getProduct(index).name)),
                       Text(marketlist.getProduct(index).price),
+                      // TODO remove example and use drag and drop
+                      RaisedButton(
+                        child: Text('Swap down'),
+                        onPressed: () {
+                          setState(() {
+                            marketlist.swapProducts(index, index + 1);
+                          });
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -83,6 +92,7 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
         onPressed: () async {
           Get.snackbar("Loading", "getting product info");
           try {
+            // TODO desodorante not working, investigate barcode
             String barcodeScanRes = await FlutterBarcodeScanner.scanBarcode(
                 "red", "Cancelar", true, ScanMode.BARCODE);
             var productID = barcodeScanRes.substring(7, 12);
@@ -137,6 +147,19 @@ class Marketlist {
 
   Product getProduct(int index) {
     return elements[index];
+  }
+
+  void deleteProduct(int index) {
+    elements.removeAt(index);
+    box.write('elements', elements);
+  }
+
+  void swapProducts(int a, b) {
+    var aProduct = elements[a];
+    var bProduct = elements[b];
+    elements[a] = bProduct;
+    elements[b] = aProduct;
+    box.write('elements', elements);
   }
 
   int size() {
