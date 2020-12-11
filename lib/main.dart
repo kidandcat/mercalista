@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:get_storage/get_storage.dart';
 
 void main() async {
-  await GetStorage.init('test');
   runApp(GetMaterialApp(home: MyApp()));
 }
 
@@ -18,22 +17,44 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: MarketlistScreen(),
+      home: MarketlistScreen('test'),
     );
   }
 }
 
 class MarketlistScreen extends StatefulWidget {
-  MarketlistScreen({this.listName});
+  MarketlistScreen(this.listName);
   final String listName;
 
   @override
-  _MarketlistScreenState createState() => _MarketlistScreenState();
+  _MarketlistScreenState createState() => _MarketlistScreenState(listName);
 }
 
 class _MarketlistScreenState extends State<MarketlistScreen> {
-  final List<Product> products = [];
-  final marketlist = Marketlist('test');
+  Marketlist marketlist;
+
+  /// listName is the key used to store the list on disk, it must be unique
+  String listName;
+
+  /// Receive listName as prop
+  _MarketlistScreenState(this.listName) {
+    marketlist = Marketlist(listName);
+  }
+
+  /// This is called only once when the Widget is added to the tree (useEffect)
+  @override
+  void initState() {
+    super.initState();
+    loadStorage();
+  }
+
+  /// GetStorage must be initialized per box or it will not load stored items
+  void loadStorage() async {
+    var ml = await Marketlist.load(listName);
+    setState(() {
+      marketlist = ml;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,19 +63,22 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
         title: Text("title"),
       ),
       body: Center(
-          child: ListView.builder(
-        itemCount: marketlist.size(),
-        itemBuilder: (context, index) => Container(
-          height: 60,
-          child: Row(
-            children: [
-              Image.network(marketlist.getProduct(index).image),
-              Flexible(child: Text(marketlist.getProduct(index).name)),
-              Text(marketlist.getProduct(index).price),
-            ],
-          ),
-        ),
-      )),
+        child: marketlist != null
+            ? ListView.builder(
+                itemCount: marketlist.size(),
+                itemBuilder: (context, index) => Container(
+                  height: 60,
+                  child: Row(
+                    children: [
+                      Image.network(marketlist.getProduct(index).image),
+                      Flexible(child: Text(marketlist.getProduct(index).name)),
+                      Text(marketlist.getProduct(index).price),
+                    ],
+                  ),
+                ),
+              )
+            : CircularProgressIndicator(),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
           Get.snackbar("Loading", "getting product info");
@@ -79,11 +103,18 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
 }
 
 class Marketlist {
+  String name;
   GetStorage box;
   DateTime date;
   List<Product> elements = [];
 
-  Marketlist(String name) {
+  static Future<Marketlist> load(String name) async {
+    await GetStorage.init(name);
+    return Marketlist(name);
+  }
+
+  Marketlist(String _name) {
+    name = _name;
     box = GetStorage(name);
     date = box.read('date');
     var els = box.read<List<dynamic>>('elements');
