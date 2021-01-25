@@ -23,8 +23,10 @@ environment:
 dependencies:
   http:
   get:
+  camera:
+  image:
   get_storage:
-  flutter_barcode_scanner:
+  flutter_barcode_scanner: ^1.0.1
   flutter:
     sdk: flutter
 

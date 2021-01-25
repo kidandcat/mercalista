@@ -1,0 +1,1 @@
+gomobile bind -target android -o ../android/app/libs/scanner.aar .
