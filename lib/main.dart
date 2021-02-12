@@ -223,6 +223,14 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
                                           }
                                         : null,
                                   ),
+                                  IconButton(
+                                    icon: Icon(Icons.delete),
+                                    onPressed: () {
+                                      setState(() {
+                                        marketlist.deleteProduct(index);
+                                      });
+                                    },
+                                  ),
                                   Text(marketlist.getProduct(index).price),
                                 ],
                               ),
@@ -362,7 +370,11 @@ class Marketlist {
   }
 
   void deleteProduct(int index) {
-    elements.removeAt(index);
+    if (elements[index].quantity == 1) {
+      elements.removeAt(index);
+    } else {
+      elements[index].quantity--;
+    }
     box.write('elements', elements.map((e) => e.toJson()).toList());
     box.save();
   }
