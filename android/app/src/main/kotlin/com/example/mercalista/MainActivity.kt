@@ -1,4 +1,4 @@
-package com.example.mercalista
+package be.galax.mercalista
 
 import androidx.annotation.NonNull
 import io.flutter.embedding.android.FlutterActivity
@@ -9,7 +9,7 @@ import scanner.Scanner
 import java.lang.Exception
 
 class MainActivity: FlutterActivity() {
-    private val CHANNEL = "com.example.mercalista/goscanner"
+    private val CHANNEL = "be.galax.mercalista/goscanner"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

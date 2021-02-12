@@ -1,38 +1,103 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
+
+import 'package:camera/camera.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:get_storage/get_storage.dart';
-import 'package:camera/camera.dart';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as imgLib;
 
 List<CameraDescription> cameras;
 
 void main() async {
+  await GetStorage.init('lists');
   WidgetsFlutterBinding.ensureInitialized();
   cameras = await availableCameras();
   runApp(GetMaterialApp(home: MyApp()));
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
+  @override
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  String marketlistSelected = '';
+  var lists = GetStorage('lists');
+
   @override
   Widget build(BuildContext context) {
+    var keys = lists.getKeys().toList();
     return MaterialApp(
       title: 'Mercalista',
       theme: ThemeData(
         primarySwatch: Colors.blue,
       ),
-      home: MarketlistScreen('test'),
+      home: marketlistSelected == ''
+          ? Scaffold(
+              appBar: AppBar(
+                title: Text('Market Lists'),
+                actions: [
+                  IconButton(
+                    icon: Icon(Icons.add),
+                    onPressed: () {
+                      Get.defaultDialog(
+                        title: '',
+                        content: Container(
+                          child: TextField(
+                            onSubmitted: (value) {
+                              setState(() {
+                                marketlistSelected = value;
+                              });
+                              Get.back();
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  )
+                ],
+              ),
+              body: Container(
+                child: ListView.builder(
+                  itemCount: keys.length,
+                  itemBuilder: (context, index) => InkWell(
+                    onTap: () {
+                      setState(() {
+                        marketlistSelected = keys[index];
+                      });
+                    },
+                    child: Container(
+                      color: Colors.green[100],
+                      padding: const EdgeInsets.all(20),
+                      margin: const EdgeInsets.all(5),
+                      child: Text(
+                        keys[index],
+                        style: TextStyle(fontSize: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          : MarketlistScreen(
+              marketlistSelected,
+              goBack: () {
+                setState(() {
+                  marketlistSelected = '';
+                });
+              },
+            ),
     );
   }
 }
 
 class MarketlistScreen extends StatefulWidget {
-  MarketlistScreen(this.listName);
+  MarketlistScreen(this.listName, {this.goBack});
   final String listName;
+  final Function goBack;
 
   @override
   _MarketlistScreenState createState() => _MarketlistScreenState(listName);
@@ -40,13 +105,14 @@ class MarketlistScreen extends StatefulWidget {
 
 class _MarketlistScreenState extends State<MarketlistScreen> {
   CameraController controller;
-  static const goScanner =
-      const MethodChannel('com.example.mercalista/goscanner');
+  static const goScanner = const MethodChannel('be.galax.mercalista/goscanner');
 
   Marketlist marketlist;
 
   /// listName is the key used to store the list on disk, it must be unique
   String listName;
+
+  bool scanning = false;
 
   /// Receive listName as prop
   _MarketlistScreenState(this.listName) {
@@ -86,91 +152,142 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(listName),
+        leading: IconButton(
+          icon: Icon(Icons.arrow_back),
+          onPressed: () {
+            widget.goBack();
+          },
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.delete_forever),
+            onPressed: () async {
+              await marketlist.deleteList();
+              widget.goBack();
+            },
+          )
+        ],
       ),
       body: Center(
-        child: Column(
-          children: [
-            marketlist != null
-                ? Expanded(
-                    child: ListView.builder(
-                      itemCount: marketlist.size(),
-                      itemBuilder: (context, index) => Container(
-                        height: 60,
-                        child: Row(
-                          children: [
-                            if (marketlist.getProduct(index).image != null)
-                              Image.network(marketlist.getProduct(index).image),
-                            if (marketlist.getProduct(index).name != null)
-                              Flexible(
-                                  child:
-                                      Text(marketlist.getProduct(index).name)),
-                            Text(marketlist.getProduct(index).price),
-                            // TODO remove example and use drag and drop
-                            ElevatedButton(
-                              child: Text('Swap down'),
-                              onPressed: () {
-                                setState(() {
-                                  marketlist.swapProducts(index, index + 1);
-                                });
-                              },
-                            ),
-                          ],
-                        ),
+        child: !scanning
+            ? Column(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.all(15),
+                    child: Text(
+                      '${marketlist.totalPrice()}€',
+                      style: TextStyle(
+                        color: Colors.black,
+                        fontSize: 30,
                       ),
                     ),
-                  )
-                : CircularProgressIndicator(),
-            (controller.value.isInitialized)
+                  ),
+                  marketlist != null
+                      ? Expanded(
+                          child: ListView.builder(
+                            itemCount: marketlist.size(),
+                            itemBuilder: (context, index) => Container(
+                              margin: const EdgeInsets.all(10),
+                              height: 60,
+                              child: Row(
+                                children: [
+                                  Text(
+                                      '${marketlist.getProduct(index).quantity}x'),
+                                  if (marketlist.getProduct(index).image !=
+                                      null)
+                                    Image.network(
+                                        marketlist.getProduct(index).image),
+                                  if (marketlist.getProduct(index).name != null)
+                                    Flexible(
+                                        child: Text(
+                                            marketlist.getProduct(index).name)),
+                                  IconButton(
+                                    icon: Icon(Icons.arrow_downward),
+                                    onPressed: (index < marketlist.size() - 1)
+                                        ? () {
+                                            setState(() {
+                                              marketlist.swapProducts(
+                                                  index, index + 1);
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                  IconButton(
+                                    icon: Icon(Icons.arrow_upward),
+                                    onPressed: index > 0
+                                        ? () {
+                                            setState(() {
+                                              marketlist.swapProducts(
+                                                  index, index - 1);
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                  Text(marketlist.getProduct(index).price),
+                                ],
+                              ),
+                            ),
+                          ),
+                        )
+                      : CircularProgressIndicator(),
+                ],
+              )
+            : controller.value.isInitialized
                 ? AspectRatio(
                     aspectRatio: controller.value.aspectRatio,
                     child: CameraPreview(controller),
                   )
                 : CircularProgressIndicator(),
-          ],
-        ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          try {
-            var counter = 3;
-            var found = false;
-            controller.startImageStream((CameraImage img) async {
-              counter--;
-              if (counter < 0 || found) {
+      floatingActionButton: scanning
+          ? CircularProgressIndicator()
+          : FloatingActionButton(
+              child: Icon(Icons.add),
+              onPressed: () async {
                 try {
-                  await controller.stopImageStream();
-                } catch (e) {}
-              }
-              if (counter < 0 || found) return;
-              var data = await Conversor.convertYUV420toImage(img);
-              var result = (await goScanner.invokeMethod('scan', data));
-              if (!isNumeric(result)) {
-                print('----------------- Gor error $result');
-                return; // got Go error
-              } else {
-                found = true;
-                print('----------------- Got number $result');
-                var res = await http.get(
-                    'https://tienda.mercadona.es/api/products/${result.substring(7, 12)}');
-                var j = jsonDecode(res.body);
-                var p = Product.fromJson(j);
-                setState(() {
-                  marketlist.addProduct(p);
-                });
-              }
-            });
-
-            // TODO desodorante not working, investigate barcode
-            // String barcodeScanRes = await FlutterBarcodeScanner.scanBarcode(
-            //     "red", "Cancelar", true, ScanMode.BARCODE);
-            // var productID = barcodeScanRes.substring(7, 12);
-
-          } catch (e) {
-            print('Exception');
-            Get.defaultDialog(title: 'Exception', middleText: e.toString());
-          }
-        },
-      ),
+                  var processing = false;
+                  setState(() {
+                    scanning = true;
+                  });
+                  await Future.delayed(Duration(seconds: 1));
+                  Future.delayed(Duration(seconds: 5), () async {
+                    try {
+                      await controller.stopImageStream();
+                    } catch (_) {}
+                    setState(() {
+                      scanning = false;
+                    });
+                  });
+                  var degreesRotated = 0;
+                  controller.startImageStream((CameraImage img) async {
+                    if (processing) return;
+                    processing = true;
+                    var data = await Conversor.convertYUV420toImage(
+                        img, degreesRotated);
+                    var result = (await goScanner.invokeMethod('scan', data));
+                    if (!isNumeric(result)) {
+                      processing = false;
+                      degreesRotated += 45;
+                      return; // got Go error
+                    } else {
+                      var res = await http.get(
+                          'https://tienda.mercadona.es/api/products/${result.substring(7, 12)}');
+                      var p = Product.fromAPI(res.body);
+                      try {
+                        await controller.stopImageStream();
+                      } catch (_) {}
+                      setState(() {
+                        marketlist.addProduct(p);
+                        scanning = false;
+                      });
+                    }
+                  });
+                } catch (e) {
+                  Get.defaultDialog(
+                      title: 'Exception', middleText: e.toString());
+                }
+              },
+            ),
     );
   }
 }
@@ -191,6 +308,7 @@ class Marketlist {
   GetStorage box;
   DateTime date;
   List<Product> elements = [];
+  GetStorage lists = GetStorage('lists');
 
   static Future<Marketlist> load(String name) async {
     await GetStorage.init(name);
@@ -200,11 +318,15 @@ class Marketlist {
   Marketlist(String _name) {
     name = _name;
     box = GetStorage(name);
-    // TODO delete everything for debugging purposes
-    // box.erase();
+    lists.write(name, true);
     date = box.read('date');
     var els = box.read<List<dynamic>>('elements');
-    if (els != null) elements = els.map((p) => Product.fromJson(p)).toList();
+    if (els != null) elements = els.map((e) => Product.fromJson(e)).toList();
+  }
+
+  Future<void> deleteList() async {
+    await lists.remove(name);
+    await box.erase();
   }
 
   Marketlist.fromJson(Map<String, dynamic> json)
@@ -217,8 +339,22 @@ class Marketlist {
       };
 
   void addProduct(Product p) {
-    elements.add(p);
-    box.write('elements', elements);
+    try {
+      var found = elements.firstWhere((e) => e.name == p.name);
+      found.quantity++;
+    } on StateError catch (_) {
+      elements.add(p);
+    }
+    box.write('elements', elements.map((e) => e.toJson()).toList());
+    box.save();
+  }
+
+  double totalPrice() {
+    double res = 0;
+    for (var e in elements) {
+      res += double.parse(e.price) * e.quantity;
+    }
+    return res;
   }
 
   Product getProduct(int index) {
@@ -227,15 +363,17 @@ class Marketlist {
 
   void deleteProduct(int index) {
     elements.removeAt(index);
-    box.write('elements', elements);
+    box.write('elements', elements.map((e) => e.toJson()).toList());
+    box.save();
   }
 
-  void swapProducts(int a, b) {
+  void swapProducts(int a, int b) {
     var aProduct = elements[a];
     var bProduct = elements[b];
     elements[a] = bProduct;
     elements[b] = aProduct;
-    box.write('elements', elements);
+    box.write('elements', elements.map((e) => e.toJson()).toList());
+    box.save();
   }
 
   int size() {
@@ -248,24 +386,52 @@ class Product {
   String image;
   String price;
   int quantity = 1;
-  Product({this.name, this.image, this.price});
-  Product.fromJson(Map<String, dynamic> json)
-      : name = json['display_name'],
-        image = json['thumbnail'],
-        price = (json['price_instructions'] != null)
-            ? json['price_instructions']['unit_price']
-            : 'Not found';
-  Map<String, dynamic> toJson() => {
-        'display_name': name,
-        'thumbnail': image,
-        'price_instructions': {
-          'unit_price': price,
-        }
-      };
+  Product({this.name, this.image, this.price, this.quantity});
+
+  @override
+  String toString() {
+    return 'Product(name: $name, image: $image, price: $price, quantity: $quantity)';
+  }
+
+  Map<String, dynamic> toMap() {
+    return {
+      'name': name,
+      'image': image,
+      'price': price,
+      'quantity': quantity,
+    };
+  }
+
+  factory Product.fromAPI(String source) {
+    var map = json.decode(source);
+    return Product(
+      name: map['display_name'],
+      image: map['thumbnail'],
+      price: map['price_instructions']['unit_price'],
+      quantity: map.containsKey('quantity') ? map['quantity'] : 1,
+    );
+  }
+
+  factory Product.fromMap(Map<String, dynamic> map) {
+    if (map == null) return null;
+
+    return Product(
+      name: map['name'],
+      image: map['image'],
+      price: map['price'],
+      quantity: map['quantity'],
+    );
+  }
+
+  String toJson() => json.encode(toMap());
+
+  factory Product.fromJson(String source) =>
+      Product.fromMap(json.decode(source));
 }
 
 class Conversor {
-  static Future<Uint8List> convertYUV420toImage(CameraImage image) async {
+  static Future<Uint8List> convertYUV420toImage(
+      CameraImage image, num angle) async {
     try {
       final int width = image.width;
       final int height = image.height;
@@ -286,6 +452,7 @@ class Conversor {
               pixelColor;
         }
       }
+      img = imgLib.copyRotate(img, angle);
       List<int> png = imgLib.encodePng(img);
       return png;
     } catch (e) {
