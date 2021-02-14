@@ -111,7 +111,7 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
 
   /// listName is the key used to store the list on disk, it must be unique
   String listName;
-
+  bool resampleNeeded = true;
   bool scanning = false;
 
   /// Receive listName as prop
@@ -124,7 +124,12 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
   void initState() {
     super.initState();
     loadStorage();
-    controller = CameraController(cameras[0], ResolutionPreset.medium);
+    controller = CameraController(
+      cameras[0],
+      ResolutionPreset.medium,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.yuv420,
+    );
     controller.initialize().then((_) {
       if (!mounted) {
         return;
@@ -249,54 +254,105 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
       ),
       floatingActionButton: scanning
           ? CircularProgressIndicator()
-          : FloatingActionButton(
-              child: Icon(Icons.add),
-              onPressed: () async {
-                try {
-                  var processing = false;
-                  setState(() {
-                    scanning = true;
-                  });
-                  await Future.delayed(Duration(seconds: 1));
-                  Future.delayed(Duration(seconds: 5), () async {
+          : Row(
+              children: [
+                FloatingActionButton(
+                  child: Icon(Icons.camera),
+                  onPressed: () async {
                     try {
-                      await controller.stopImageStream();
-                    } catch (_) {}
-                    setState(() {
-                      scanning = false;
-                    });
-                  });
-                  var degreesRotated = 0;
-                  controller.startImageStream((CameraImage img) async {
-                    if (processing) return;
-                    processing = true;
-                    var data = await Conversor.convertYUV420toImage(
-                        img, degreesRotated);
-                    var result = (await goScanner.invokeMethod('scan', data));
-                    if (!isNumeric(result)) {
-                      processing = false;
-                      degreesRotated += 45;
-                      return; // got Go error
-                    } else {
-                      var res = await http.get(
-                          'https://tienda.mercadona.es/api/products/${result.substring(7, 12)}');
-                      var p = Product.fromAPI(res.body);
-                      try {
-                        await controller.stopImageStream();
-                      } catch (_) {}
                       setState(() {
-                        marketlist.addProduct(p);
-                        scanning = false;
+                        scanning = true;
                       });
+                      // give user 2 seconds to frame the barcode
+                      await Future.delayed(Duration(seconds: 1));
+                      // if we can't find a result in this time, stop
+                      Future.delayed(Duration(seconds: 5), () async {
+                        if (!scanning) return;
+                        setState(() {
+                          scanning = false;
+                        });
+                        Get.snackbar('Failed', 'Failed',
+                            backgroundColor: Colors.red);
+                      });
+                      resampleNeeded = true;
+                      // start scanning
+                      await controller.startImageStream(processImage);
+                    } catch (e) {
+                      Get.defaultDialog(
+                          title: 'Exception', middleText: e.toString());
                     }
-                  });
-                } catch (e) {
-                  Get.defaultDialog(
-                      title: 'Exception', middleText: e.toString());
-                }
-              },
+                  },
+                ),
+                FloatingActionButton(
+                  child: Icon(Icons.add),
+                  onPressed: () {
+                    String name;
+                    String price;
+                    Get.defaultDialog(
+                      title: 'Añadir',
+                      content: Column(children: [
+                        TextField(
+                          onChanged: (value) => name = value,
+                          decoration: InputDecoration(hintText: 'Name'),
+                        ),
+                        TextField(
+                          keyboardType: TextInputType.number,
+                          onChanged: (value) => price = value,
+                          decoration: InputDecoration(hintText: 'Price'),
+                        ),
+                        TextButton(
+                          child: Text('OK'),
+                          onPressed: () {
+                            setState(() {
+                              marketlist.addProduct(Product(
+                                image: '',
+                                name: name,
+                                price: price,
+                                quantity: 1,
+                              ));
+                            });
+                            Get.back();
+                          },
+                        ),
+                      ]),
+                    );
+                  },
+                )
+              ],
             ),
     );
+  }
+
+  void processImage(CameraImage img) async {
+    print('-------------- processImage   resampleNeeded = $resampleNeeded');
+    if (!resampleNeeded || !scanning) {
+      controller.stopImageStream();
+      return;
+    }
+    resampleNeeded = false;
+    controller.stopImageStream();
+    var degreesRotated = 0;
+    while (degreesRotated < 360) {
+      var data = await Conversor.convertYUV420toImage(img, degreesRotated);
+      var result = (await goScanner.invokeMethod('scan', data));
+      print('RESULT $result');
+      if (!isNumeric(result)) {
+        degreesRotated += 45;
+        continue;
+      } else {
+        var res = await http.get(
+            'https://tienda.mercadona.es/api/products/${result.substring(7, 12)}');
+        var p = Product.fromAPI(res.body);
+        setState(() {
+          marketlist.addProduct(p);
+          scanning = false;
+        });
+        Get.snackbar('Success', 'Success', backgroundColor: Colors.green);
+        break;
+      }
+    }
+    resampleNeeded = true;
+    if (scanning) controller.startImageStream(processImage);
   }
 }
 

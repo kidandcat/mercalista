@@ -13,6 +13,7 @@ import (
 func Scan(imgData []byte) string {
 	// open and decode image file
 	r := bytes.NewReader(imgData)
+	defer r.Reset(imgData)
 	img, format, err := image.Decode(r)
 	if err != nil {
 		return err.Error()
@@ -27,6 +28,7 @@ func Scan(imgData []byte) string {
 
 	// decode image
 	eanReader := oned.NewEAN13Reader()
+	defer eanReader.Reset()
 	result, err := eanReader.Decode(bmp, nil)
 	if err != nil {
 		return err.Error()
