@@ -111,7 +111,7 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
 
   /// listName is the key used to store the list on disk, it must be unique
   String listName;
-  bool resampleNeeded = true;
+  bool showCamera = false;
   bool scanning = false;
 
   /// Receive listName as prop
@@ -126,7 +126,7 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
     loadStorage();
     controller = CameraController(
       cameras[0],
-      ResolutionPreset.medium,
+      ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
@@ -174,7 +174,7 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
         ],
       ),
       body: Center(
-        child: !scanning
+        child: !showCamera
             ? Column(
                 children: [
                   Container(
@@ -197,37 +197,24 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
                               child: Row(
                                 children: [
                                   Text(
-                                      '${marketlist.getProduct(index).quantity}x'),
-                                  if (marketlist.getProduct(index).image !=
-                                      null)
-                                    Image.network(
-                                        marketlist.getProduct(index).image),
+                                    '${marketlist.getProduct(index).quantity}x',
+                                  ),
+                                  if (marketlist.getProduct(index).image != '')
+                                    Container(
+                                      margin: const EdgeInsets.only(left: 5),
+                                      child: Image.network(
+                                        marketlist.getProduct(index).image,
+                                      ),
+                                    ),
                                   if (marketlist.getProduct(index).name != null)
-                                    Flexible(
+                                    Expanded(
+                                      child: Container(
+                                        margin: const EdgeInsets.only(left: 5),
                                         child: Text(
-                                            marketlist.getProduct(index).name)),
-                                  IconButton(
-                                    icon: Icon(Icons.arrow_downward),
-                                    onPressed: (index < marketlist.size() - 1)
-                                        ? () {
-                                            setState(() {
-                                              marketlist.swapProducts(
-                                                  index, index + 1);
-                                            });
-                                          }
-                                        : null,
-                                  ),
-                                  IconButton(
-                                    icon: Icon(Icons.arrow_upward),
-                                    onPressed: index > 0
-                                        ? () {
-                                            setState(() {
-                                              marketlist.swapProducts(
-                                                  index, index - 1);
-                                            });
-                                          }
-                                        : null,
-                                  ),
+                                          marketlist.getProduct(index).name,
+                                        ),
+                                      ),
+                                    ),
                                   IconButton(
                                     icon: Icon(Icons.delete),
                                     onPressed: () {
@@ -236,7 +223,8 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
                                       });
                                     },
                                   ),
-                                  Text(marketlist.getProduct(index).price),
+                                  Text(
+                                      '${double.parse(marketlist.getProduct(index).price).toStringAsFixed(2)}€'),
                                 ],
                               ),
                             ),
@@ -247,41 +235,35 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
               )
             : controller.value.isInitialized
                 ? AspectRatio(
-                    aspectRatio: controller.value.aspectRatio,
+                    aspectRatio: MediaQuery.of(context).size.width /
+                        MediaQuery.of(context).size.height,
                     child: CameraPreview(controller),
                   )
                 : CircularProgressIndicator(),
       ),
-      floatingActionButton: scanning
+      floatingActionButton: showCamera
           ? CircularProgressIndicator()
           : Row(
+              mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                FloatingActionButton(
-                  child: Icon(Icons.camera),
-                  onPressed: () async {
-                    try {
-                      setState(() {
-                        scanning = true;
-                      });
-                      // give user 2 seconds to frame the barcode
-                      await Future.delayed(Duration(seconds: 1));
-                      // if we can't find a result in this time, stop
-                      Future.delayed(Duration(seconds: 5), () async {
-                        if (!scanning) return;
+                Container(
+                  margin: const EdgeInsets.only(right: 10),
+                  child: FloatingActionButton(
+                    child: Icon(Icons.camera),
+                    onPressed: () async {
+                      try {
                         setState(() {
-                          scanning = false;
+                          showCamera = true;
                         });
-                        Get.snackbar('Failed', 'Failed',
-                            backgroundColor: Colors.red);
-                      });
-                      resampleNeeded = true;
-                      // start scanning
-                      await controller.startImageStream(processImage);
-                    } catch (e) {
-                      Get.defaultDialog(
-                          title: 'Exception', middleText: e.toString());
-                    }
-                  },
+                        // give user 2 seconds to frame the barcode
+                        await Future.delayed(Duration(seconds: 2));
+                        await controller.startImageStream(processImage);
+                      } catch (e) {
+                        Get.defaultDialog(
+                            title: 'Exception', middleText: e.toString());
+                      }
+                    },
+                  ),
                 ),
                 FloatingActionButton(
                   child: Icon(Icons.add),
@@ -293,19 +275,20 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
                       content: Column(children: [
                         TextField(
                           onChanged: (value) => name = value,
-                          decoration: InputDecoration(hintText: 'Name'),
+                          decoration: InputDecoration(hintText: 'Nombre'),
                         ),
                         TextField(
                           keyboardType: TextInputType.number,
                           onChanged: (value) => price = value,
-                          decoration: InputDecoration(hintText: 'Price'),
+                          decoration: InputDecoration(hintText: 'Precio'),
                         ),
                         TextButton(
                           child: Text('OK'),
                           onPressed: () {
                             setState(() {
                               marketlist.addProduct(Product(
-                                image: '',
+                                image:
+                                    'https://cdn.onlinewebfonts.com/svg/img_343290.png',
                                 name: name,
                                 price: price,
                                 quantity: 1,
@@ -324,35 +307,30 @@ class _MarketlistScreenState extends State<MarketlistScreen> {
   }
 
   void processImage(CameraImage img) async {
-    print('-------------- processImage   resampleNeeded = $resampleNeeded');
-    if (!resampleNeeded || !scanning) {
-      controller.stopImageStream();
-      return;
+    print('-------------- processImage scanning = $scanning');
+    if (scanning) return;
+    setState(() {
+      scanning = true;
+    });
+    await controller.stopImageStream();
+    var data = await Conversor.convertYUV420toImage(img);
+    var result = (await goScanner.invokeMethod('scan', data));
+    print('RESULT $result');
+    if (!isNumeric(result)) {
+      Get.snackbar('Not found', 'Not found', backgroundColor: Colors.red);
+    } else {
+      var res = await http.get(
+          'https://tienda.mercadona.es/api/products/${result.substring(7, 12)}');
+      var p = Product.fromAPI(res.body);
+      setState(() {
+        marketlist.addProduct(p);
+      });
+      Get.snackbar('Success', 'Success', backgroundColor: Colors.green);
     }
-    resampleNeeded = false;
-    controller.stopImageStream();
-    var degreesRotated = 0;
-    while (degreesRotated < 360) {
-      var data = await Conversor.convertYUV420toImage(img, degreesRotated);
-      var result = (await goScanner.invokeMethod('scan', data));
-      print('RESULT $result');
-      if (!isNumeric(result)) {
-        degreesRotated += 45;
-        continue;
-      } else {
-        var res = await http.get(
-            'https://tienda.mercadona.es/api/products/${result.substring(7, 12)}');
-        var p = Product.fromAPI(res.body);
-        setState(() {
-          marketlist.addProduct(p);
-          scanning = false;
-        });
-        Get.snackbar('Success', 'Success', backgroundColor: Colors.green);
-        break;
-      }
-    }
-    resampleNeeded = true;
-    if (scanning) controller.startImageStream(processImage);
+    setState(() {
+      scanning = false;
+      showCamera = false;
+    });
   }
 }
 
@@ -498,8 +476,7 @@ class Product {
 }
 
 class Conversor {
-  static Future<Uint8List> convertYUV420toImage(
-      CameraImage image, num angle) async {
+  static Future<Uint8List> convertYUV420toImage(CameraImage image) async {
     try {
       final int width = image.width;
       final int height = image.height;
@@ -520,7 +497,6 @@ class Conversor {
               pixelColor;
         }
       }
-      img = imgLib.copyRotate(img, angle);
       List<int> png = imgLib.encodePng(img);
       return png;
     } catch (e) {
